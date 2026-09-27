@@ -111,7 +111,7 @@ export default function AuditFlow({ intro }: { intro: ReactNode }) {
       const result = await startScrape(target || null, token);
       session.current = { token: result.session, forUrl: target };
       setSite(target ? domainOf(target) : null);
-      funnel("url_given"); // a website the server accepted, or "I don't have a website yet"
+      funnel("url_given"); // a website the server accepted, or "I don't have one yet"
       return true;
     } catch (e) {
       session.current = null;
@@ -145,7 +145,7 @@ export default function AuditFlow({ intro }: { intro: ReactNode }) {
 
   function continueFromWebsite(e: FormEvent) {
     e.preventDefault();
-    if (!noWebsite && !website.trim()) return setError("Enter your website, or tick “I don't have a website yet”.");
+    if (!noWebsite && !website.trim()) return setError("Enter your website, or tick “I don't have one yet”.");
     if (!noWebsite && !looksLikeWebsite(website)) return setError("That doesn't look like a website address.");
     setUrlError("");
     void ensureSession(); // the site is read in the background while they answer the rest
@@ -340,7 +340,7 @@ export default function AuditFlow({ intro }: { intro: ReactNode }) {
               }}
               className="size-4"
             />
-            I don&apos;t have a website yet
+            I don&apos;t have one yet
           </label>
           <StepError text={error || urlError} />
           <div className="mt-6 flex items-center justify-between gap-4">

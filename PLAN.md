@@ -360,7 +360,7 @@ A loop starts with the backend and runs **every 10 minutes**:
 > 🔁 **Changed 26 Sept at the user's request: this is a MOCK frontend, with every question on ONE scrolling page** (not the PRD's one-question-per-screen flow). The real frontend comes later.
 - One form, in PRD order: **Q1 → website → Q2 → Q3 → Q4 → Q5 → "See my report"**. Each question is labelled "Question n of 5"; the website block is unnumbered.
 - **The website read still starts early**, as the PRD intends: when the founder leaves the website field, `/api/scrape` runs (with the Turnstile token) and reads the site in the background while they answer the rest. On submit, that session is reused, so there's no second read. If the website changed or was never read, it's read on submit.
-- **"I don't have a website yet"** checkbox disables the field.
+- **"I don't have one yet"** checkbox (PRD wording; was "I don't have a website yet" until 27 Sept) disables the field.
 - **Validation on submit:** every unanswered question shows its own message, and focus jumps to the first one. Answering clears that question's message. A junk website shows the server's message as soon as they leave the field.
 - **Q4** shows the sub-line *"We use this to size the dollar impact of each leak."*
 - All question and option text lives in **`backend/library.py`** (exact PRD wording) and is exported to `frontend/lib/content.json` with `python library.py`. `test_rules.py` fails if the two ever drift apart.
