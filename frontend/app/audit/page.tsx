@@ -1,6 +1,6 @@
 import AuditFlow from "@/components/AuditFlow";
 
-// Landing page with the questions embedded (PRD §9.3). Mock frontend: all questions on one scrolling page.
+// Landing page with the questions embedded (PRD §9.3): one question per screen, then the email step.
 export default function AuditPage() {
   return (
     <main className="flex-1">
@@ -21,7 +21,7 @@ function Intro() {
         Answer five questions and share your website. In about three minutes you get a report that names your three
         biggest gaps, sizes each one in dollars against your revenue, and names the fix.
       </p>
-      <p className="mt-4 text-sm text-muted">Free · No email needed · The full report is yours</p>
+      <p className="mt-4 text-sm text-muted">Free · Five questions · A copy of your report by email</p>
     </header>
   );
 }

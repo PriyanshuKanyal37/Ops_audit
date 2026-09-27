@@ -1,8 +1,13 @@
 """Browser check for the founder flow and report page (Phase 2+), using the Edge already on Windows.
 
-Needs the backend on :8100 and the frontend on :3100 (`npm run build && npm run start`).
+Needs the backend on :8100 and the frontend on :3100 (`npm run build && npm run start`), both with Cloudflare's
+Turnstile TEST keys (real keys block automated browsers) and the fake Resend on :8198:
+  frontend: NEXT_PUBLIC_TURNSTILE_SITE_KEY=1x00000000000000000000AA npm run build   (the env var beats .env.local)
+  backend:  TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA RESEND_API_KEY=re_test
+            RESEND_API_URL=http://127.0.0.1:8198/emails uvicorn main:app --port 8100
+The question flow holds back /api/audit, so no Claude call is made unless --live.
 Usage:  backend\\.venv\\Scripts\\python.exe e2e_check.py            report pages + flow, no Claude call
-        backend\\.venv\\Scripts\\python.exe e2e_check.py --live     also submits one real audit (~$0.04)
+        backend\\.venv\\Scripts\\python.exe e2e_check.py --live     also runs one real audit (~$0.03)
         backend\\.venv\\Scripts\\python.exe e2e_check.py --blocked  submit refused by the rate limit
                                                                   (start the backend with RATE_LIMIT_PER_HOUR=0)
 Dev-only dependency: pip install playwright (not in requirements.txt).
@@ -111,6 +116,17 @@ def sql(query: str, *args):
         return pool.submit(asyncio.run, run()).result()
 
 
+def sql_all(query: str, *args) -> list:
+    async def run():
+        await db.init()
+        try:
+            return await db._pool.fetch(query, *args)
+        finally:
+            await db.close()
+    with ThreadPoolExecutor(1) as pool:
+        return pool.submit(asyncio.run, run()).result()
+
+
 def reset_sample_flags() -> None:
     sql("""update audits set clicked_cta = false, call_booked = false, visited_ce_page = false,
            report_emails_sent = 0, report_email = null where id = any($1)""", [CE_REPORT, BOOKING_REPORT])
@@ -173,77 +189,182 @@ def capture(page: Page) -> None:
     reset_sample_flags()
 
 
+PENDING: list = []  # /api/audit requests held back by the test, released when it decides the report is "ready"
+FUNNEL_STEPS = {"landing_view", "q1_answered", "url_given", "q2_answered", "q3_answered", "q4_reached",
+                "q4_answered", "q5_answered", "submitted", "email_given"}
+
+
+def hold_audit(route) -> None:
+    PENDING.append(route)
+
+
+def release_audit(report_id: str = CE_REPORT) -> None:
+    PENDING.pop().fulfill(status=200, content_type="application/json", body=json.dumps({"id": report_id}))
+
+
+def answer_questions(page: Page) -> None:
+    """Q1 → Q5 the quick way (the step-by-step checks are in flow)."""
+    page.get_by_role("button", name="Getting consistent leads and bookings").click()
+    page.fill("#website", "pilot.com")
+    page.get_by_role("button", name="Continue").click()
+    expect(page.get_by_text("Question 2 of 5")).to_be_visible(timeout=20_000)
+    page.get_by_label("Paid ads").check()
+    page.get_by_role("button", name="Next").click()
+    page.get_by_label("Chasing status updates on active projects").check()
+    page.get_by_role("button", name="Next").click()
+    page.get_by_role("button", name="I'd rather not say").click()
+    page.get_by_role("button", name="A decent website, but no case studies or proof").click()
+
+
 def flow(page: Page, live: bool) -> None:
-    print("\nQuestion form (all questions on one page)")
+    width = page.viewport_size["width"]
+    print(f"\nQuestion flow: one screen at a time, then the email screen ({width}px)")
+    reset_sample_flags()
+    sent_before = len(emails)
     page.goto(WEB)
     check("/ redirects to /audit", page.url.endswith("/audit"))
-    check("Intro, all 5 questions and the website field are on one page",
-          page.get_by_role("heading", level=1).is_visible() and page.locator("fieldset").count() == 5
-          and page.locator("#website").is_visible())
-    check("Questions are numbered 1–5 of 5", all(page.get_by_text(f"Question {n} of 5").count() == 1 for n in range(1, 6)))
-    page.screenshot(path=OUT / f"form-empty-{page.viewport_size['width']}.png", full_page=True)
+    check("First screen: intro + Question 1 of 5 only (no website field, no other questions)",
+          page.get_by_role("heading", level=1).is_visible() and page.get_by_text("Question 1 of 5").is_visible()
+          and page.locator("#website").count() == 0 and page.get_by_text("Pick one to continue").is_visible())
+    check(f"Q1 screen: no sideways scroll at {width}px", no_sideways_scroll(page))
+    page.screenshot(path=OUT / f"flow-1-q1-{width}.png", full_page=True)
 
-    page.get_by_role("button", name="See my report").click()
-    check("Empty submit flags every question",
-          page.get_by_text("Pick one option.").count() == 3 and page.get_by_text("Pick at least one option.").count() == 2
-          and "Enter your website" in page.locator("#url-error").inner_text())
-    check("…and moves focus to the first unanswered question", page.evaluate("document.activeElement.name") == "q1")
-    page.screenshot(path=OUT / f"form-errors-{page.viewport_size['width']}.png", full_page=True)
-    page.get_by_label("Getting consistent leads and bookings").check()
-    check("Answering a question clears its error", page.locator("#q1-error").inner_text() == "")
+    page.get_by_role("button", name="Getting consistent leads and bookings").click()
+    expect(page.locator("#website")).to_be_visible()
+    check("Picking a Q1 answer moves on to the website screen by itself",
+          page.get_by_text("Your website", exact=True).is_visible())
+    page.get_by_role("button", name="← Back").click()
+    check("Back → Q1 with the answer still picked, and a Next button",
+          page.get_by_role("button", name="Getting consistent leads and bookings").get_attribute("aria-pressed") == "true"
+          and page.get_by_role("button", name="Next").is_visible())
+    page.get_by_role("button", name="Next").click()
 
+    page.get_by_role("button", name="Continue").click()
+    check("Empty website → asks for it", "Enter your website" in page.locator("#step-error").inner_text())
     scrape_bodies: list[str] = []
     page.on("request", lambda r: scrape_bodies.append(r.post_data or "")
             if r.method == "POST" and r.url.endswith("/api/scrape") else None)
     page.fill("#website", "hello")
-    page.locator("#website").blur()
+    page.get_by_role("button", name="Continue").click()
     # Up to ~5s for Cloudflare's token on a fresh page load, then the server call.
-    expect(page.locator("#url-error")).to_have_text("That doesn't look like a website address.", timeout=15_000)
-    check("Junk website → the server's friendly error as soon as they leave the field", True)
+    expect(page.locator("#step-error")).to_have_text("That doesn't look like a website address.", timeout=15_000)
+    check("Junk website → the server's friendly error, and it stays on the website screen",
+          page.locator("#website").is_visible())
+    page.screenshot(path=OUT / f"flow-2-website-error-{width}.png", full_page=True)
     page.fill("#website", "pilot.com")
     with page.expect_response(lambda r: r.url.endswith("/api/scrape") and r.request.method == "POST") as response:
-        page.locator("#website").blur()
-    check("Real website → the background site read starts straight away (200)", response.value.status == 200
-          and page.locator("#url-error").inner_text() == "")
+        page.get_by_role("button", name="Continue").click()
+    expect(page.get_by_text("Question 2 of 5")).to_be_visible()
+    check("Real website → the background site read starts (200) and Q2 shows", response.value.status == 200)
     check("…and the request carried Cloudflare's Turnstile token",
           '"turnstile_token":"XXXX.DUMMY.TOKEN.XXXX"' in scrape_bodies[-1].replace(" ", ""))
-    page.get_by_label("I don't have a website yet").check()
-    check("'I don't have a website yet' disables the website field", page.locator("#website").is_disabled())
-    page.get_by_label("I don't have a website yet").uncheck()
 
+    page.get_by_role("button", name="Next").click()
+    check("Multi-choice Next with nothing ticked → 'Pick at least one option.'",
+          page.locator("#step-error").inner_text() == "Pick at least one option.")
     page.get_by_label("Inbound through our website").check()
     page.get_by_label("Paid ads").check()
+    check("Ticking an option clears the message", page.locator("#step-error").inner_text() == "")
+    page.screenshot(path=OUT / f"flow-3-q2-{width}.png", full_page=True)
+    page.get_by_role("button", name="Next").click()
     page.get_by_label("Chasing status updates on active projects").check()
-    page.get_by_label("I'd rather not say").check()
-    page.get_by_label("A decent website, but no case studies or proof").check()
-    check("Answers stay selected (radio + checkboxes)", page.get_by_label("Paid ads").is_checked()
-          and page.get_by_label("I'd rather not say").is_checked())
-    check(f"Form: no sideways scroll at {page.viewport_size['width']}px", no_sideways_scroll(page))
-    page.screenshot(path=OUT / f"form-filled-{page.viewport_size['width']}.png", full_page=True)
+    page.get_by_role("button", name="Next").click()
+    expect(page.get_by_text("Question 4 of 5")).to_be_visible()
+    page.get_by_role("button", name="I'd rather not say").click()
+    expect(page.get_by_text("Question 5 of 5")).to_be_visible()
+    check("Picking a Q4 answer moves on to Q5 by itself", True)
+    page.get_by_role("button", name="← Back").click()
+    check("Back from Q5 → Q4 still answered",
+          page.get_by_role("button", name="I'd rather not say").get_attribute("aria-pressed") == "true")
+    page.get_by_role("button", name="← Back").click()
+    page.get_by_role("button", name="← Back").click()
+    check("…and Q2's ticks are kept", page.get_by_label("Paid ads").is_checked())
+    for _ in range(3):
+        page.get_by_role("button", name="Next").click()  # Q2 → Q3 → Q4 → Q5
+    expect(page.get_by_text("Question 5 of 5")).to_be_visible()
+
     if "--blocked" in sys.argv:  # backend started with RATE_LIMIT_PER_HOUR=0: the audit is refused before Claude
+        page.get_by_role("button", name="A decent website, but no case studies or proof").click()
         page.get_by_role("button", name="See my report").click()
+        page.fill("#email", "founder@example.com")
+        page.get_by_role("button", name="Show my report").click()
         expect(page.get_by_role("heading", name="We hit a problem")).to_be_visible()
         check("Rate-limited founder sees the friendly limit message + Try again",
               "audits an hour" in page.locator("main").inner_text()
               and page.get_by_role("button", name="Try again").is_visible())
-        check("No second site read on submit (the one from the website field is reused)", len(scrape_bodies) == 2)
+        check("No second site read at the end (the website screen's one is reused)", len(scrape_bodies) == 2)
         page.screenshot(path=OUT / "flow-blocked.png", full_page=True)
         return
+
+    audit_bodies: list[str] = []
+    page.on("request", lambda r: audit_bodies.append(r.post_data or "") if r.url.endswith("/api/audit") else None)
     if not live:
+        page.route("**/api/audit", hold_audit)
+    page.get_by_role("button", name="See my report").click()
+    check("See my report with no Q5 answer → 'Pick one option.'",
+          page.locator("#step-error").inner_text() == "Pick one option.")
+    page.get_by_role("button", name="A decent website, but no case studies or proof").click()
+    check("Q5 doesn't jump ahead: it waits for See my report", page.get_by_text("Question 5 of 5").is_visible())
+    page.get_by_role("button", name="See my report").click()
+    expect(page.get_by_role("heading", name="Where should we send your report?")).to_be_visible()
+    check("See my report → email screen, and the report starts generating straight away",
+          len(audit_bodies) == 1 and '"q4":"rather_not_say"' in audit_bodies[0].replace(" ", ""))
+    check("Email screen shows the report being built for their site",
+          page.get_by_text("Building your report for pilot.com…").is_visible())
+    check("…with the cursor already in the email box", page.evaluate("document.activeElement.id") == "email")
+    check(f"Email screen: no sideways scroll at {width}px", no_sideways_scroll(page))
+    page.screenshot(path=OUT / f"flow-4-email-{width}.png", full_page=True)
+    page.get_by_role("button", name="Show my report").click()
+    check("No email → asked for one (it's required)", "Enter your email address" in page.locator("#step-error").inner_text())
+    page.fill("#email", "not-an-email")
+    page.get_by_role("button", name="Show my report").click()
+    check("Bad email → asked again, nothing sent", "Enter your email address" in page.locator("#step-error").inner_text()
+          and len(emails) == sent_before)
+    page.fill("#email", "founder@example.com")
+    page.get_by_role("button", name="Show my report").click()
+    expect(page.get_by_role("heading", name="Building your report")).to_be_visible()
+
+    if live:
+        page.wait_for_url(re.compile(r"/audit/r/[\w-]+$"), timeout=150_000)
+        check("Live audit lands on its report page", "is losing an estimated" in page.locator("h1").inner_text())
+        check("…with the inferred band", "(assumed)" in page.locator("section").first.inner_text())
+        page.wait_for_timeout(1000)
+        check("…and a copy of the link went to their inbox",
+              emails and emails[-1]["to"] == ["founder@example.com"] and page.url.split("/")[-1] in emails[-1]["text"])
+        print(f"  ↳ new report: {page.url}")
+        page.screenshot(path=OUT / "flow-5-live-report.png", full_page=True)
         return
 
-    page.get_by_role("button", name="See my report").click()
-    expect(page.get_by_role("heading", name="Building your report")).to_be_visible()
-    expect(page.get_by_text("Reading pilot.com…")).to_be_visible()
-    page.wait_for_timeout(7000)
-    check("Generating screen shows the PRD status lines with their real band",
-          page.get_by_text("Sizing impact against $100K–$200K MRR…").is_visible())
-    page.screenshot(path=OUT / "flow-4-generating.png", full_page=True)
-    page.wait_for_url(re.compile(r"/audit/r/[\w-]+$"), timeout=120_000)
-    check("Live audit lands on its report page", "is losing an estimated" in page.locator("h1").inner_text())
-    check("Live report shows the inferred band", "(assumed)" in page.locator("section").first.inner_text())
-    print(f"  ↳ new report: {page.url}")
-    page.screenshot(path=OUT / "flow-5-live-report.png", full_page=True)
+    check("Email given before the report is ready → the building screen, lines timed from See my report",
+          page.get_by_text("Reading pilot.com…").is_visible())
+    page.screenshot(path=OUT / f"flow-5-building-{width}.png", full_page=True)
+    release_audit()
+    page.wait_for_url(re.compile(rf"/audit/r/{CE_REPORT}$"), timeout=15_000)
+    check("Report ready → their report opens", "is losing an estimated" in page.locator("h1").inner_text())
+    page.wait_for_timeout(1000)
+    check("…a copy of the report link was emailed to them", len(emails) == sent_before + 1
+          and emails[-1]["to"] == ["founder@example.com"] and f"/audit/r/{CE_REPORT}" in emails[-1]["text"])
+    check("…and their email is saved on the report",
+          sql("select report_email from audits where id = $1", CE_REPORT)["report_email"] == "founder@example.com")
+    visitor = page.evaluate("localStorage.getItem('audit_visitor')")
+    steps = {row["event"] for row in sql_all("select event from funnel_events where visitor_id = $1", visitor)}
+    check("Every funnel step was recorded, including the email", steps == FUNNEL_STEPS)
+
+    if width == 1280:  # the other order: the report is ready before they type their email
+        page.goto(f"{WEB}/audit")
+        answer_questions(page)
+        page.get_by_role("button", name="See my report").click()
+        expect(page.get_by_role("heading", name="Where should we send your report?")).to_be_visible()
+        release_audit()
+        expect(page.get_by_text("Your report is ready")).to_be_visible()
+        check("Report finishes while they're on the email screen → 'Your report is ready'", True)
+        page.fill("#email", "founder@example.com")
+        page.get_by_role("button", name="Show my report").click()
+        page.wait_for_url(re.compile(rf"/audit/r/{CE_REPORT}$"), timeout=15_000)
+        check("…and Show my report opens it straight away", "is losing an estimated" in page.locator("h1").inner_text())
+    page.unroute("**/api/audit")
+    sql("delete from funnel_events where visitor_id = $1 returning 1", visitor)  # test visits out of the funnel
+    reset_sample_flags()
 
 
 def main() -> None:

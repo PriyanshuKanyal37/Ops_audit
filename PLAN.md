@@ -469,6 +469,7 @@ The report page gets `noindex` so reports never show up in Google.
 | 16 | "Rank by dollar impact" lets a heavy gap with one weak signal win | Rank by **expected** cost = range midpoint × evidence (1 point counts ⅓, 3+ count fully). Pure dollars put "No Systematic Outbound" in 16 of 19 test reports, because not ticking outbound is true for almost everyone |
 | 17 | PRD §9.2: read the homepage only, ~300 words | Also read the **case studies, services and about pages** linked from the menu (one each), ~700 words total. The homepage alone missed BMV's case studies and Digital Boardwalk's Case Studies page |
 | 18 | "No website → Credibility 1–2" vs "never score all four low" | The specific rule wins: a founder with no website can see four low scores |
+| 20 | PRD §1: "No email gate. The full report is visible to everyone." | **Email required before the report** (user's call, 27 Sept). The report starts generating at "See my report" and is written while they type, and a copy of the link is emailed to them. Every report gets a contact, and the follow-up and Slack alerts can reach people, but some founders will leave at that screen: watch "See my report → gave email" in `funnel_report.py`. **Needs Shiv's OK** |
 | 19 | Known limits of the scoring | Light gaps (Manual Onboarding, Fragmented Visibility) rarely make the top 3, because the PRD's light cells are small. L1's website-wording trigger ("generic or dated positioning") isn't checked. Recalibrate after 20 calls (PRD §12.4) |
 
 ---
@@ -861,3 +862,32 @@ Descriptions of 70+ words: 0/12 before → 8/12 after (the other 4 are 66–68).
   - Free instances sleep after 15 idle minutes, so the first visit takes about a minute. The jobs loop also sleeps with them, so production needs a paid instance or a cron.
   - The rate limits were deployed at 10/20 for testing; set 3/10 before sharing.
   - The Render key had been pasted as a second `RESEND_API_KEY` line, which broke email; it was renamed to `RENDER_API_KEY`.
+
+### ✅ Step-by-step questions + required email (27 Sept 2026, at the user's request)
+- **Flow:** one screen at a time, **Q1 → website → Q2 → Q3 → Q4 → Q5 → email → report**, replacing the single scrolling page. This is PRD §4's screen order.
+  - Q1 and Q4 move on as soon as an answer is picked; Q2 and Q3 have Next; Q5 has **See my report**.
+  - Every screen after the first has Back, and answers are kept.
+  - "Question n of 5" plus a progress bar. The website screen uses the PRD's "One quick thing before we continue."
+  - Single-choice answers are buttons, not radios, so arrow keys can't skip a screen.
+  - Focus moves to each new question for screen readers.
+- **In the background:**
+  - The website read starts when they leave the website screen.
+  - **The report starts generating the moment they press See my report**, so it's written while they type their email.
+  - The email screen shows "Building your report for acme.com…", then "✓ Your report is ready".
+  - If they submit before it's ready, the building screen continues its lines from where generation started (they don't restart).
+- **Email:**
+  - Required, with the same format check as the server.
+  - On submit it's saved on the report and a copy of the link is sent (the existing "email me this report").
+  - A failed send never hides the report.
+  - The landing line now says "A copy of your report by email" instead of "No email needed". This goes against PRD §1: §11 gap 20.
+- **Funnel:** new step `email_given`. `funnel_report.py` shows "See my report → gave email" (there's no PRD target for it). A founder who leaves at the email screen still has a generated report (the Claude cost is already spent).
+- **Tests:** `e2e_check.py`'s form section was rewritten. **111 browser checks pass** (desktop + phone):
+  - every screen, auto-advance, Back keeping answers
+  - the empty, junk and real website cases
+  - the multi-choice message, Q5 waiting for See my report
+  - generation starting at See my report
+  - email required and validated
+  - both orders (email before and after the report is ready)
+  - the copy emailed and saved, and all 10 funnel steps recorded
+
+  The test holds back `/api/audit`, so no Claude calls. It needs Cloudflare's test keys (see its docstring). `test_rules` and `test_scrape` pass. `phase5_check.py` now refuses to run (by design) because 18 real test audits are over 24 hours old; it runs again once they're cleaned up before launch.

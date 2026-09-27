@@ -177,7 +177,7 @@ async def set_feedback(audit_id: str, answer: str) -> bool:
 # --- Funnel (PRD §12.1) ---
 
 FUNNEL_EVENTS = ("landing_view", "q1_answered", "url_given", "q2_answered", "q3_answered", "q4_reached",
-                 "q4_answered", "q5_answered", "submitted")
+                 "q4_answered", "q5_answered", "submitted", "email_given")  # submitted = pressed "See my report"
 
 
 async def record_funnel(visitor_id: str, event: str) -> None:

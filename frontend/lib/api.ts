@@ -107,7 +107,8 @@ export type FunnelStep =
   | "q4_reached"
   | "q4_answered"
   | "q5_answered"
-  | "submitted";
+  | "submitted" // pressed "See my report" (reached the email screen)
+  | "email_given";
 
 // A random id per browser, so each funnel step counts once per visitor. Not personal data; if storage is
 // blocked (private mode), it lasts for this page only.

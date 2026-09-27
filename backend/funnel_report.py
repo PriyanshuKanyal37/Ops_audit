@@ -15,12 +15,16 @@ def rate(part: int, whole: int) -> float | None:
 
 
 def rows(c: dict) -> list[tuple[str, float | None, str, float | None]]:
-    """(step, actual rate, target as text, the minimum that counts as on target)."""
+    """(step, actual rate, target as text, the minimum that counts as on target).
+    "Completed report" counts reports generated; since 27 Sept that happens before the email screen, so a founder
+    who leaves at the email screen still has a (costed) report they never see."""
     return [
         ("Landing → started Q1", rate(c["q1_answered"], c["landing_view"]), "45%", 0.45),
         ("Started → gave website", rate(c["url_given"], c["q1_answered"]), "85%", 0.85),
         ("Gave website → reached Q4", rate(c["q4_reached"], c["url_given"]), "80%", 0.80),
         ("Q4 → Q5 (answered revenue)", rate(c["q4_answered"], c["q4_reached"]), "90%", 0.90),
+        # The email screen isn't in the PRD (it said "no email gate"), so it has no target: watch this drop-off.
+        ("See my report → gave email", rate(c["email_given"], c["submitted"]), "— (not in PRD)", None),
         ("Completed report (of starts)", rate(c["audits"], c["q1_answered"]), "70%", 0.70),
         ("Report → button click", rate(c["clicked"], c["audits"]), "30%", 0.30),
         ("Audit → booked call (on /audit/book)", rate(c["booked"], c["audits"]), "8–10%", 0.08),
@@ -35,11 +39,12 @@ def report(c: dict, days: int) -> str:
     lines = [f"# Ops Clarity Audit funnel, last {days} days", "",
              f"Visitors per step: landing {c['landing_view']} · Q1 {c['q1_answered']} · website {c['url_given']} · "
              f"Q2 {c['q2_answered']} · Q3 {c['q3_answered']} · reached Q4 {c['q4_reached']} · answered Q4 "
-             f"{c['q4_answered']} · Q5 {c['q5_answered']} · pressed submit {c['submitted']} · reports {c['audits']} · "
+             f"{c['q4_answered']} · Q5 {c['q5_answered']} · pressed See my report {c['submitted']} · gave email "
+             f"{c['email_given']} · reports {c['audits']} · "
              f"clicked {c['clicked']} · Client Engine page {c['ce_visits']} · booked {c['booked']}", "",
              "| Step | Actual | PRD target | |", "|---|---|---|---|"]
     for step, actual, target, floor in rows(c):
-        status = "" if actual is None else "✅" if actual >= floor else "⚠️ below target"
+        status = "" if actual is None or floor is None else "✅" if actual >= floor else "⚠️ below target"
         lines.append(f"| {step} | {pct(actual)} | {target} | {status} |")
     q4 = rate(c["q4_answered"], c["q4_reached"])
     degraded = rate(c["degraded"], c["audits"])
