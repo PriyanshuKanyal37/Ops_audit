@@ -2,8 +2,10 @@
 
 // The audit flow (PRD §4): one screen at a time, Q1 → website → Q2 → Q3 → Q4 → Q5 → email → report.
 // Single-choice questions move on as soon as one is picked; multi-choice ones have a Next button; every screen
-// after the first has Back, and answers are kept. Work happens in the background: the website read starts when
-// they leave the website screen, and the report starts generating the moment they press "See my report", so it's
+// after the first has Back, and answers are kept. Work happens in the background: Continue on the website screen
+// moves on at once while the site is read behind the scenes (only obvious typos are caught first; if the server
+// still rejects the site, "See my report" brings them back to fix it), and the report starts generating the
+// moment they press "See my report", so it's
 // being written (~30s) while they type their email. The email is required and gets a copy of the report link
 // (user's call, 27 Sept; PRD §1 said "no email gate", so this needs Shiv's OK). Copy comes from lib/content.json.
 
@@ -24,6 +26,18 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/; // the same check the server make
 const domainOf = (text: string) =>
   text.trim().replace(/^https?:\/\//i, "").replace(/^www\./i, "").split(/[/?#]/)[0].toLowerCase();
 
+/** The server's website rules (scrape.normalize), checked in the browser so Continue never has to wait. */
+function looksLikeWebsite(text: string) {
+  const value = text.trim();
+  if (!value || /\s/.test(value) || value.includes("@")) return false;
+  try {
+    const url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(value) ? value : `https://${value}`);
+    return (url.protocol === "http:" || url.protocol === "https:") && url.hostname.includes(".");
+  } catch {
+    return false;
+  }
+}
+
 type Run = { startedAt: number; promise: Promise<string> }; // resolves to the new report's id
 
 export default function AuditFlow({ intro }: { intro: ReactNode }) {
@@ -35,6 +49,7 @@ export default function AuditFlow({ intro }: { intro: ReactNode }) {
   const [noWebsite, setNoWebsite] = useState(false);
   const [email, setEmail] = useState("");
   const [error, setError] = useState(""); // the message for the screen on show
+  const [urlError, setUrlError] = useState(""); // from the background site read; shown on the website screen
   const [busy, setBusy] = useState(false);
   const [site, setSite] = useState<string | null>(null);
   const [reportState, setReportState] = useState<"running" | "ready" | "failed">("running");
@@ -86,7 +101,7 @@ export default function AuditFlow({ intro }: { intro: ReactNode }) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     if (turnstileEnabled && !humanToken.current) {
-      setError("We couldn't run the quick human check. If you use an ad or script blocker, allow this page and try again.");
+      setUrlError("We couldn't run the quick human check. If you use an ad or script blocker, allow this page and try again.");
       return false;
     }
     const token = humanToken.current;
@@ -100,7 +115,7 @@ export default function AuditFlow({ intro }: { intro: ReactNode }) {
       return true;
     } catch (e) {
       session.current = null;
-      setError(e instanceof ApiError ? e.message : NETWORK_ERROR);
+      setUrlError(e instanceof ApiError ? e.message : NETWORK_ERROR);
       return false;
     }
   }
@@ -128,22 +143,22 @@ export default function AuditFlow({ intro }: { intro: ReactNode }) {
     goTo(step + 1);
   }
 
-  async function continueFromWebsite(e: FormEvent) {
+  function continueFromWebsite(e: FormEvent) {
     e.preventDefault();
     if (!noWebsite && !website.trim()) return setError("Enter your website, or tick “I don't have a website yet”.");
-    setBusy(true);
-    const ok = await ensureSession();
-    setBusy(false);
-    if (ok) goTo(step + 1);
+    if (!noWebsite && !looksLikeWebsite(website)) return setError("That doesn't look like a website address.");
+    setUrlError("");
+    void ensureSession(); // the site is read in the background while they answer the rest
+    goTo(step + 1);
   }
 
   async function seeMyReport() {
     if (!answers.q5) return setError("Pick one option.");
     funnel("submitted");
     setBusy(true);
-    const ok = await ensureSession(); // already done on the website screen, unless it expired
+    const ok = await ensureSession(); // usually finished long ago; retried here if the background read failed
     setBusy(false);
-    if (!ok) return setStep(URL_STEP);
+    if (!ok) return goTo(URL_STEP); // the website screen shows why (urlError)
     startReport();
     setError("");
     setPhase("email");
@@ -308,9 +323,10 @@ export default function AuditFlow({ intro }: { intro: ReactNode }) {
             onChange={(e) => {
               setWebsite(e.target.value);
               setError("");
+              setUrlError("");
             }}
             aria-describedby="step-error"
-            aria-invalid={error ? true : undefined}
+            aria-invalid={error || urlError ? true : undefined}
             className="mt-2 min-h-12 w-full rounded-xl border border-line bg-surface px-4 text-base disabled:opacity-50"
           />
           <label className="mt-4 flex min-h-12 cursor-pointer items-center gap-3 text-base">
@@ -320,17 +336,16 @@ export default function AuditFlow({ intro }: { intro: ReactNode }) {
               onChange={(e) => {
                 setNoWebsite(e.target.checked);
                 setError("");
+                setUrlError("");
               }}
               className="size-4"
             />
             I don&apos;t have a website yet
           </label>
-          <StepError text={error} />
+          <StepError text={error || urlError} />
           <div className="mt-6 flex items-center justify-between gap-4">
             {back}
-            <PrimaryButton type="submit" disabled={busy}>
-              {busy ? "Checking…" : "Continue"}
-            </PrimaryButton>
+            <PrimaryButton type="submit">Continue</PrimaryButton>
           </div>
         </form>
       ) : (

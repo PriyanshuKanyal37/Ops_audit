@@ -246,16 +246,17 @@ def flow(page: Page, live: bool) -> None:
             if r.method == "POST" and r.url.endswith("/api/scrape") else None)
     page.fill("#website", "hello")
     page.get_by_role("button", name="Continue").click()
-    # Up to ~5s for Cloudflare's token on a fresh page load, then the server call.
-    expect(page.locator("#step-error")).to_have_text("That doesn't look like a website address.", timeout=15_000)
-    check("Junk website → the server's friendly error, and it stays on the website screen",
-          page.locator("#website").is_visible())
+    check("Junk website → caught at once in the browser, no server call, stays on the website screen",
+          page.locator("#step-error").inner_text() == "That doesn't look like a website address."
+          and page.locator("#website").is_visible() and not scrape_bodies)
     page.screenshot(path=OUT / f"flow-2-website-error-{width}.png", full_page=True)
     page.fill("#website", "pilot.com")
     with page.expect_response(lambda r: r.url.endswith("/api/scrape") and r.request.method == "POST") as response:
         page.get_by_role("button", name="Continue").click()
-    expect(page.get_by_text("Question 2 of 5")).to_be_visible()
-    check("Real website → the background site read starts (200) and Q2 shows", response.value.status == 200)
+        # With Turnstile on, the read waits ~3–5s for its token: Q2 showing within 1.5s proves Continue didn't wait.
+        expect(page.get_by_text("Question 2 of 5")).to_be_visible(timeout=1_500)
+        check("Continue moves straight on to Q2, without waiting for the site read", True)
+    check("…while the site read runs in the background (200)", response.value.status == 200)
     check("…and the request carried Cloudflare's Turnstile token",
           '"turnstile_token":"XXXX.DUMMY.TOKEN.XXXX"' in scrape_bodies[-1].replace(" ", ""))
 
@@ -292,7 +293,7 @@ def flow(page: Page, live: bool) -> None:
         check("Rate-limited founder sees the friendly limit message + Try again",
               "audits an hour" in page.locator("main").inner_text()
               and page.get_by_role("button", name="Try again").is_visible())
-        check("No second site read at the end (the website screen's one is reused)", len(scrape_bodies) == 2)
+        check("No second site read at the end (the website screen's one is reused)", len(scrape_bodies) == 1)
         page.screenshot(path=OUT / "flow-blocked.png", full_page=True)
         return
 
@@ -349,6 +350,19 @@ def flow(page: Page, live: bool) -> None:
     visitor = page.evaluate("localStorage.getItem('audit_visitor')")
     steps = {row["event"] for row in sql_all("select event from funnel_events where visitor_id = $1", visitor)}
     check("Every funnel step was recorded, including the email", steps == FUNNEL_STEPS)
+
+    if width == 1280:  # the server rejects the site in the background, after they've moved on
+        page.goto(f"{WEB}/audit")
+        page.route("**/api/scrape", lambda route: route.fulfill(
+            status=422, content_type="application/json",
+            body=json.dumps({"detail": "That doesn't look like a website address."})))
+        answer_questions(page)
+        page.get_by_role("button", name="See my report").click()
+        expect(page.locator("#website")).to_be_visible()
+        check("Site rejected in the background → See my report brings them back to the website screen, with why",
+              page.locator("#step-error").inner_text() == "That doesn't look like a website address."
+              and not PENDING)
+        page.unroute("**/api/scrape")
 
     if width == 1280:  # the other order: the report is ready before they type their email
         page.goto(f"{WEB}/audit")

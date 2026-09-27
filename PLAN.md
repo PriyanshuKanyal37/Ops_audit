@@ -891,3 +891,17 @@ Descriptions of 70+ words: 0/12 before → 8/12 after (the other 4 are 66–68).
   - the copy emailed and saved, and all 10 funnel steps recorded
 
   The test holds back `/api/audit`, so no Claude calls. It needs Cloudflare's test keys (see its docstring). `test_rules` and `test_scrape` pass. `phase5_check.py` now refuses to run (by design) because 18 real test audits are over 24 hours old; it runs again once they're cleaned up before launch.
+
+### ✅ Human check off + instant Continue (27 Sept 2026, at the user's request)
+- **Cloudflare Turnstile switched OFF** ("we don't need it right now"). No code was removed: it's off whenever the keys are empty.
+  - The keys were deleted from Render: `TURNSTILE_SECRET_KEY` on the API, `NEXT_PUBLIC_TURNSTILE_SITE_KEY` on the web service.
+  - Locally they're commented out (kept) in `backend/.env` and `frontend/.env.local`. `/health` shows `"turnstile": false`.
+  - ⚠️ **PRD §9.4 makes it non-negotiable before launch.** To switch it back on:
+    1. Uncomment the two local lines, or re-add them on Render.
+    2. Add `ops-audit-web.onrender.com` (and the real domain) to the widget's hostnames.
+    3. Rebuild the web service.
+  - Until then, `/api/scrape` and `/api/audit` are protected only by the per-IP rate limit and the $20/day spend cap.
+- **Continue on the website screen no longer waits:**
+  - It checks the address in the browser with the server's own rules (no spaces or `@`, http(s) only, a dot in the host). Then it moves straight to Q2 and reads the site in the background.
+  - If the server still rejects the site (rare), "See my report" retries once, then takes them back to the website screen with the reason. No report is started.
+- Tests: **114 browser checks pass**, including: a junk site caught with no server call, Q2 showing within 1.5s while the read is still waiting, and a background rejection sending them back.
