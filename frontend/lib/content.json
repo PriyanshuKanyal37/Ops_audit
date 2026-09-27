@@ -1,0 +1,179 @@
+{
+  "screens": [
+    {
+      "key": "q1",
+      "title": "Where does your business break down most often?",
+      "sub": "",
+      "multi": false,
+      "options": [
+        {
+          "value": "A",
+          "label": "Getting consistent leads and bookings"
+        },
+        {
+          "value": "B",
+          "label": "Onboarding clients without chaos"
+        },
+        {
+          "value": "C",
+          "label": "Delivering work on time without me jumping in"
+        },
+        {
+          "value": "D",
+          "label": "Keeping clients long enough to grow accounts"
+        },
+        {
+          "value": "E",
+          "label": "Understanding what's actually happening across the business"
+        }
+      ]
+    },
+    {
+      "key": "url",
+      "title": "One quick thing before we continue.",
+      "sub": "What's your website? We'll read your public positioning while you answer the rest."
+    },
+    {
+      "key": "q2",
+      "title": "If you stopped chasing new business personally for the next 30 days, where would leads still come from?",
+      "sub": "Select all that apply.",
+      "multi": true,
+      "options": [
+        {
+          "value": "referrals",
+          "label": "Referrals and word of mouth"
+        },
+        {
+          "value": "personal_network",
+          "label": "My personal network"
+        },
+        {
+          "value": "inbound_website",
+          "label": "Inbound through our website"
+        },
+        {
+          "value": "linkedin_content",
+          "label": "LinkedIn or content"
+        },
+        {
+          "value": "outbound",
+          "label": "Cold email or outbound"
+        },
+        {
+          "value": "paid_ads",
+          "label": "Paid ads"
+        },
+        {
+          "value": "partnerships",
+          "label": "Partnerships or other agencies"
+        }
+      ]
+    },
+    {
+      "key": "q3",
+      "title": "Where does your week actually go?",
+      "sub": "Select all that apply.",
+      "multi": true,
+      "options": [
+        {
+          "value": "chasing_new_business",
+          "label": "Chasing new business personally"
+        },
+        {
+          "value": "writing_proposals",
+          "label": "Writing proposals one at a time"
+        },
+        {
+          "value": "following_up_leads",
+          "label": "Following up on leads manually"
+        },
+        {
+          "value": "unblocking_team",
+          "label": "Unblocking the team on decisions only I can make"
+        },
+        {
+          "value": "chasing_status",
+          "label": "Chasing status updates on active projects"
+        },
+        {
+          "value": "onboarding_by_hand",
+          "label": "Onboarding new clients by hand"
+        },
+        {
+          "value": "fixing_inconsistent_work",
+          "label": "Fixing work that came back inconsistent"
+        }
+      ]
+    },
+    {
+      "key": "q4",
+      "title": "What's your average monthly revenue?",
+      "sub": "We use this to size the dollar impact of each leak.",
+      "multi": false,
+      "options": [
+        {
+          "value": "under_50k",
+          "label": "Under $50K"
+        },
+        {
+          "value": "50k_100k",
+          "label": "$50K–$100K"
+        },
+        {
+          "value": "100k_200k",
+          "label": "$100K–$200K"
+        },
+        {
+          "value": "200k_350k",
+          "label": "$200K–$350K"
+        },
+        {
+          "value": "350k_500k",
+          "label": "$350K–$500K"
+        },
+        {
+          "value": "500k_plus",
+          "label": "$500K+"
+        },
+        {
+          "value": "rather_not_say",
+          "label": "I'd rather not say"
+        }
+      ]
+    },
+    {
+      "key": "q5",
+      "title": "What does a prospect see before they ever talk to you?",
+      "sub": "",
+      "multi": false,
+      "options": [
+        {
+          "value": "dated_site",
+          "label": "A website that's a couple of years behind where we are now"
+        },
+        {
+          "value": "no_proof",
+          "label": "A decent website, but no case studies or proof"
+        },
+        {
+          "value": "stale_linkedin",
+          "label": "A LinkedIn profile I haven't touched in a while"
+        },
+        {
+          "value": "referral_presold",
+          "label": "Most arrive pre-sold through a referral, so I'm not sure it matters"
+        },
+        {
+          "value": "dont_know",
+          "label": "Honestly, I don't know"
+        }
+      ]
+    }
+  ],
+  "rather_not_say_band": "$100K–$200K",
+  "copy": {
+    "cta_client_engine_button": "Here's how it works. →",
+    "cta_booking_button": "Book 30 minutes →",
+    "cta_secondary": "Already know what you need? Book a call →"
+  }
+}

@@ -1,0 +1,9 @@
+.env
+.env.local
+.venv/
+__pycache__/
+backend/fixtures/out/
+e2e_out/
+*.log
+node_modules/
+.next/
