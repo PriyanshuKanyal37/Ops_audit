@@ -4,7 +4,7 @@
 > Everything new lives in **`audit-app/`**. The old [`backend/`](../backend/) folder is **not touched**. It's only kept for reference.
 > **How we work:** one phase at a time → build → test thoroughly → report → mark it ✅ here. Details of each finished phase are in the [🧾 Phase log](#-phase-log) at the bottom.
 > 💰 **Anthropic budget for the whole build: under $1.00. Spent so far: $0.78** (itemised in the Phase 1, 2, 4 and live-QA logs).
-> 🚫 **Not deploying yet (user's call, 26 Sept).** Everything runs and is tested locally; deploy comes after the user's own local testing.
+> 🚀 **Deployed on Render (27 Sept, at the user's request)** from [github.com/PriyanshuKanyal37/Ops_audit](https://github.com/PriyanshuKanyal37/Ops_audit) (public repo, `main`, auto-deploy on push). Web: https://ops-audit-web.onrender.com · API: https://ops-audit-api.onrender.com (Singapore, next to the Neon database; free plan). Details are in the phase log.
 
 ## 📍 Progress
 
@@ -836,3 +836,28 @@ Descriptions of 70+ words: 0/12 before → 8/12 after (the other 4 are 66–68).
 **Turnstile with the real keys:** a Playwright-driven browser never gets a token. Cloudflare starts its check but doesn't pass automated browsers, which is the point of it. **Needs one manual check by the user in a normal browser** (enter a website, click away: no "human check" error = working). Automated browser tests need the Cloudflare test keys.
 
 **Still to do:** the Client Engine bar (PRD §7.9/§9.3), which needs the live Client Engine page and Framer access. No Claude spend this phase.
+
+### 🚀 Deployed to Render (27 Sept 2026, at the user's request)
+- **GitHub:** [PriyanshuKanyal37/Ops_audit](https://github.com/PriyanshuKanyal37/Ops_audit). It's **public**, so the prompt, scoring and this plan are visible to anyone.
+  - Before the push, all 60 files were checked against every real secret value in both env files plus 10 key patterns: clean. `.env` / `.env.local` are git-ignored.
+  - If you make the repo private, Render needs GitHub access to it, or auto-deploy stops.
+- **Render** ("Priyanshu's workspace", **Singapore** next to the Neon database, **free plan**, auto-deploy on every push to `main`):
+
+  | Service | URL | Setup |
+  |---|---|---|
+  | `ops-audit-api` (srv-dasihk0473hc738eunrg) | https://ops-audit-api.onrender.com | `backend/`, `pip install -r requirements.txt`, `uvicorn main:app --host 0.0.0.0 --port $PORT`, health check `/health`, Python 3.11.11 |
+  | `ops-audit-web` (srv-dasihl97lnhs739be00g) | https://ops-audit-web.onrender.com | `frontend/`, `npm ci && npm run build`, `npx next start -p $PORT`, Node 22 |
+
+- **Env:**
+  - API: everything in `backend/.env` except `RENDER_API_KEY`, plus `FRONTEND_URL` and `ALLOWED_ORIGINS` set to the web URL, `PUBLIC_API_URL` set to the API URL, and **`JOBS_ENABLED=false`**. Jobs stay off until the test audits are deleted, or they would alert and email about them.
+  - Web: `NEXT_PUBLIC_API_URL` set to the API URL, plus the Turnstile site key and the Client Engine URL.
+- **Smoke test:**
+  - API health is OK: database connected, Turnstile and email configured, jobs off.
+  - The question page renders.
+  - A saved report renders through web → API → database, including "Why we flagged this".
+  - CORS allows the web origin.
+- **Blocker:** Turnstile error **110200** on `ops-audit-web.onrender.com`. The widget doesn't list that hostname yet, so the live form can't start a website read. Fix: Cloudflare → Turnstile → the widget → Hostname Management → add `ops-audit-web.onrender.com`.
+- **Notes:**
+  - Free instances sleep after 15 idle minutes, so the first visit takes about a minute. The jobs loop also sleeps with them, so production needs a paid instance or a cron.
+  - The rate limits were deployed at 10/20 for testing; set 3/10 before sharing.
+  - The Render key had been pasted as a second `RESEND_API_KEY` line, which broke email; it was renamed to `RENDER_API_KEY`.
